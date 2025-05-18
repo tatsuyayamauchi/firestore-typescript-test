@@ -1,5 +1,18 @@
-import { initializeApp } from "firebase-admin/app";
-import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { initializeApp } from "firebase/app";
+import {
+  getFirestore,
+  collection,
+  doc,
+  setDoc,
+  updateDoc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  writeBatch,
+  serverTimestamp,
+  Timestamp,
+  connectFirestoreEmulator,
+} from "firebase/firestore";
 
 // Firestoreエミュレータの設定
 process.env.FIRESTORE_EMULATOR_HOST = "localhost:8080";
@@ -7,12 +20,34 @@ process.env.FIRESTORE_EMULATOR_HOST = "localhost:8080";
 const projectId = process.env.FIREBASE_PROJECT_ID || "dummy-project-id";
 
 // Firebase Admin SDKの初期化
-initializeApp({
+// initializeApp({
+//   projectId: projectId,
+// });
+
+const firebaseConfig = {
+  apiKey: "dummy-api-key",
+  authDomain: "dummy-app.firebaseapp.com",
   projectId: projectId,
-});
+  storageBucket: "dummy-app.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abcdef",
+};
+
+// Firebaseアプリの初期化
+const app = initializeApp(firebaseConfig);
 
 // Firestoreインスタンスを取得
-const db = getFirestore();
+const db = getFirestore(app);
+
+// Firestoreエミュレータに接続
+connectFirestoreEmulator(db, "localhost", 8080);
+
+// 時刻付きでログを出力する関数
+function logWithTimestamp(message: string): void {
+  const now = new Date();
+  const timestamp = now.toLocaleTimeString("ja-JP");
+  console.log(`[${timestamp}] ${message}`);
+}
 
 // ユーザーインターフェース
 interface User {
@@ -22,12 +57,7 @@ interface User {
   last_updated: Timestamp;
 }
 
-// 時刻付きでログを出力する関数
-function logWithTimestamp(message: string): void {
-  const now = new Date();
-  const timestamp = now.toLocaleTimeString("ja-JP");
-  console.log(`[${timestamp}] ${message}`);
-}
+// ユーザーを作成する関数
 async function createUser(
   id: string,
   name: string,
@@ -37,11 +67,11 @@ async function createUser(
     id,
     name,
     is_active: isActive,
-    last_updated: Timestamp.now(),
+    last_updated: Timestamp.fromDate(new Date()),
   };
 
   try {
-    await db.collection("users").doc(id).set(user);
+    await setDoc(doc(db, "users", id), user);
     logWithTimestamp(`ユーザー ${name} を作成しました`);
   } catch (error) {
     logWithTimestamp(`ユーザー ${name} の作成に失敗しました: ${error}`);
@@ -54,9 +84,9 @@ async function updateUserActiveStatus(
   isActive: boolean
 ): Promise<void> {
   try {
-    await db.collection("users").doc(userId).update({
+    await updateDoc(doc(db, "users", userId), {
       is_active: isActive,
-      last_updated: Timestamp.now(),
+      last_updated: serverTimestamp(),
     });
     logWithTimestamp(
       `ユーザー ${userId} の状態を ${
@@ -72,7 +102,8 @@ async function updateUserActiveStatus(
 function monitorUsers(userId: string): () => void {
   logWithTimestamp(`ユーザー ${userId} が他のユーザーの監視を開始します`);
 
-  const unsubscribe = db.collection("users").onSnapshot(
+  const unsubscribe = onSnapshot(
+    collection(db, "users"),
     (snapshot) => {
       logWithTimestamp(`ユーザー ${userId} が変更を検出しました`);
 
@@ -114,7 +145,8 @@ function toggleUserStatus(
 ): NodeJS.Timeout {
   return setInterval(async () => {
     // 現在の状態を取得
-    const userDoc = await db.collection("users").doc(userId).get();
+    const userDocRef = doc(db, "users", userId);
+    const userDoc = await getDoc(userDocRef);
     const userData = userDoc.data() as User;
 
     // 状態を反転
@@ -123,18 +155,21 @@ function toggleUserStatus(
   }, intervalSeconds * 1000);
 }
 
-const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
+const sleep = (time: number) =>
+  new Promise((resolve) => setTimeout(resolve, time));
 
 // メイン関数
 async function main() {
   try {
     // コレクションを初期化（すでに存在する場合はクリア）
-    const usersCollection = await db.collection("users").get();
-    const batch = db.batch();
-    usersCollection.docs.forEach((doc) => {
-      batch.delete(doc.ref);
-    });
-    await batch.commit();
+    const usersCollection = await getDocs(collection(db, "users"));
+    if (!usersCollection.empty) {
+      const batch = writeBatch(db);
+      usersCollection.docs.forEach((document) => {
+        batch.delete(doc(db, "users", document.id));
+      });
+      await batch.commit();
+    }
     logWithTimestamp("usersコレクションを初期化しました");
 
     // ユーザーを作成
