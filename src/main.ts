@@ -123,6 +123,8 @@ function toggleUserStatus(
   }, intervalSeconds * 1000);
 }
 
+const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
+
 // メイン関数
 async function main() {
   try {
@@ -138,29 +140,26 @@ async function main() {
     // ユーザーを作成
     await createUser("userA", "ユーザーA", true);
     await createUser("userB", "ユーザーB", false);
-    await createUser("userC", "ユーザーC", true);
+
+    await sleep(1000); // ユーザー作成まで1sec待つ
 
     // 各ユーザーが他のユーザーを監視開始
     const unsubscribeA = monitorUsers("userA");
     const unsubscribeB = monitorUsers("userB");
-    const unsubscribeC = monitorUsers("userC");
 
     // 各ユーザーが状態を定期的に変更
-    const intervalA = toggleUserStatus("userA", 2); // 2秒ごと
-    const intervalB = toggleUserStatus("userB", 3); // 3秒ごと
-    const intervalC = toggleUserStatus("userC", 5); // 5秒ごと
+    const intervalA = toggleUserStatus("userA", 3);
+    const intervalB = toggleUserStatus("userB", 7);
 
     // 10秒後にプログラムを終了
     setTimeout(async () => {
       // 監視を停止
       unsubscribeA();
       unsubscribeB();
-      unsubscribeC();
 
       // インターバルをクリア
       clearInterval(intervalA);
       clearInterval(intervalB);
-      clearInterval(intervalC);
 
       logWithTimestamp("10秒経過しました。プログラムを終了します。");
 
